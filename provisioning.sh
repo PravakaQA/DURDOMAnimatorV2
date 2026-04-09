@@ -85,6 +85,70 @@ aria2c -x 16 -s 16 --continue=true --dir=loras \
   --out=WanFun.reworked.safetensors \
   "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/loras/WanFun.reworked.safetensors"
 
+  #!/bin/bash
+echo "🔧 PATCH: докачиваем всё недостающее для Animator V2.1..."
+
+cd /workspace/ComfyUI/models
+
+# ====================== LoRAs ======================
+echo ""
+echo "📥 LoRA: WanPusa.safetensors"
+aria2c -x 16 -s 16 --continue=true --dir=loras \
+  --out=WanPusa.safetensors \
+  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/loras/WanPusa.safetensors"
+
+echo "📥 LoRA: WanFun.reworked.safetensors"
+aria2c -x 16 -s 16 --continue=true --dir=loras \
+  --out=WanFun.reworked.safetensors \
+  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/loras/WanFun.reworked.safetensors"
+
+# Воркфлоу ищет wan.reworked (с точкой), а файл называется wan_reworked (с подчёркиванием)
+# Создаём симлинк с нужным именем
+echo "🔗 Создаём симлинк: wan.reworked.safetensors → wan_reworked.safetensors"
+ln -sf /workspace/ComfyUI/models/loras/wan_reworked.safetensors \
+        /workspace/ComfyUI/models/loras/wan.reworked.safetensors
+
+# ====================== ONNX модели ======================
+echo ""
+mkdir -p onnx
+
+echo "📥 ONNX: yolov10m.onnx (~62 МБ)"
+aria2c -x 16 -s 16 --continue=true --dir=onnx \
+  --out=yolov10m.onnx \
+  "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B/resolve/main/process_checkpoint/det/yolov10m.onnx"
+
+echo "📥 ONNX: vitpose_h_wholebody_model.onnx (~420 КБ)"
+aria2c -x 16 -s 16 --continue=true --dir=onnx \
+  --out=vitpose_h_wholebody_model.onnx \
+  "https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_model.onnx"
+
+echo "📥 ONNX: vitpose_h_wholebody_data.bin (нужен рядом с .onnx)"
+aria2c -x 16 -s 16 --continue=true --dir=onnx \
+  --out=vitpose_h_wholebody_data.bin \
+  "https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_data.bin"
+
+# ====================== ControlNet ======================
+echo ""
+mkdir -p controlnet
+
+echo "📥 ControlNet: Wan21_Uni3C_controlnet_fp16.safetensors (~2 ГБ)"
+aria2c -x 16 -s 16 --continue=true --dir=controlnet \
+  --out=Wan21_Uni3C_controlnet_fp16.safetensors \
+  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_Uni3C_controlnet_fp16.safetensors"
+
+echo ""
+echo "✅ PATCH завершён!"
+echo "Теперь перезапусти ComfyUI и снова открой воркфлоу."
+echo ""
+echo "Итоговый список файлов:"
+echo "  loras/WanPusa.safetensors"
+echo "  loras/WanFun.reworked.safetensors"
+echo "  loras/wan.reworked.safetensors  (симлинк на wan_reworked)"
+echo "  onnx/yolov10m.onnx"
+echo "  onnx/vitpose_h_wholebody_model.onnx"
+echo "  onnx/vitpose_h_wholebody_data.bin"
+echo "  controlnet/Wan21_Uni3C_controlnet_fp16.safetensors"
+
 echo ""
 echo "✅ ANIMATOR V2.1 ПОЛНОСТЬЮ ГОТОВ!"
 echo "Workflows: /workspace/ComfyUI/user/default/workflows/"
