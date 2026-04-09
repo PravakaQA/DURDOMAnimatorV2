@@ -1,162 +1,153 @@
 #!/bin/bash
-echo "🚀 Provisioning ANIMATOR V2.1 (VIDEO) - FULL AUTO FIXED started..."
+set -e
+
+echo "🚀 Provisioning ANIMATOR V2.1 (VIDEO) started..."
+
 apt-get update && apt-get install -y git wget aria2 python3-pip unzip
-cd /workspace/ComfyUI/custom_nodes
 
-# ←←←←← ЭТО САМАЯ ВАЖНАЯ СТРОКА ←←←←←
 PIP="/venv/main/bin/pip"
-echo "📦 Используем venv pip: $PIP"
+COMFY="/workspace/ComfyUI"
+MODELS="$COMFY/models"
+NODES="$COMFY/custom_nodes"
+WORKFLOWS="$COMFY/user/default/workflows"
 
-echo "📥 Клонируем ВСЕ custom nodes для Animator V2.1..."
-git clone https://github.com/kijai/ComfyUI-WanVideoWrapper.git
-git clone https://github.com/kijai/ComfyUI-WanAnimatePreprocess.git
-git clone https://github.com/kijai/ComfyUI-KJNodes.git
-git clone https://github.com/rgthree/rgthree-comfy.git
-git clone https://github.com/ltdrdata/ComfyUI-Impact-Pack.git
-git clone https://github.com/teskor-hub/comfyui-teskors-utils.git
-git clone https://github.com/PozzettiAndrea/ComfyUI-SAM3.git
-git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
-git clone https://github.com/ClownsharkBatwing/ComfyUI-ClownsharK.git
-git clone https://github.com/cubiq/ComfyUI_essentials.git
-git clone https://github.com/LeonQ8/ComfyUI-Dynamic-Lora-Scheduler.git
-git clone https://github.com/PGCRT/CRT-Nodes.git
+echo "📦 Using pip: $PIP"
 
-echo "📦 Устанавливаем все зависимости в venv..."
+# ====================== CUSTOM NODES ======================
+echo "📥 Cloning custom nodes..."
+cd "$NODES"
+
+git clone https://github.com/kijai/ComfyUI-WanVideoWrapper.git || true
+git clone https://github.com/kijai/ComfyUI-WanAnimatePreprocess.git || true
+git clone https://github.com/kijai/ComfyUI-KJNodes.git || true
+git clone https://github.com/rgthree/rgthree-comfy.git || true
+git clone https://github.com/ltdrdata/ComfyUI-Impact-Pack.git || true
+git clone https://github.com/teskor-hub/comfyui-teskors-utils.git || true
+git clone https://github.com/PozzettiAndrea/ComfyUI-SAM3.git || true
+git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git || true
+git clone https://github.com/ClownsharkBatwing/ComfyUI-ClownsharK.git || true
+git clone https://github.com/cubiq/ComfyUI_essentials.git || true
+git clone https://github.com/LeonQ8/ComfyUI-Dynamic-Lora-Scheduler.git || true
+git clone https://github.com/PGCRT/CRT-Nodes.git || true
+
+echo "📦 Installing node requirements..."
 $PIP install --upgrade --force-reinstall opencv-python opencv-python-headless
+
 for dir in */; do
   if [ -f "$dir/requirements.txt" ]; then
-    echo "→ Устанавливаем зависимости для $dir"
+    echo "→ Installing requirements for $dir"
     $PIP install -r "$dir/requirements.txt" || true
   fi
 done
 
-echo "📂 Копируем workflows..."
-mkdir -p /workspace/ComfyUI/user/default/workflows
-cp /workspace/provisioning/animator_v2_1_0.json /workspace/ComfyUI/user/default/workflows/animator_v2_1_0.json 2>/dev/null || echo "⚠️ animator_v2_1_0.json не найден"
-cp /workspace/provisioning/animator_v2_1_0_mask_mode.json /workspace/ComfyUI/user/default/workflows/animator_v2_1_0_mask_mode.json 2>/dev/null || echo "⚠️ animator_v2_1_0_mask_mode.json не найден"
+# ====================== WORKFLOWS ======================
+echo "📂 Copying workflows..."
+mkdir -p "$WORKFLOWS"
 
-# ====================== МОДЕЛИ ======================
-echo ""
-echo "🚀 Скачиваем все модели для ANIMATOR V2.1..."
-cd /workspace/ComfyUI/models
-mkdir -p diffusion_models vae clip_vision clip loras
+cp /workspace/provisioning/animator_v2_1_0.json \
+  "$WORKFLOWS/animator_v2_1_0.json" \
+  2>/dev/null || echo "⚠️ animator_v2_1_0.json not found"
 
-echo "📥 1. Основная модель → WanModel.safetensors (~25-30 ГБ)"
-aria2c -x 16 -s 16 --continue=true --dir=diffusion_models \
+cp /workspace/provisioning/animator_v2_1_0_mask_mode.json \
+  "$WORKFLOWS/animator_v2_1_0_mask_mode.json" \
+  2>/dev/null || echo "⚠️ animator_v2_1_0_mask_mode.json not found"
+
+# ====================== MODEL DIRS ======================
+echo "📁 Creating model directories..."
+mkdir -p \
+  "$MODELS/diffusion_models" \
+  "$MODELS/vae" \
+  "$MODELS/clip_vision" \
+  "$MODELS/clip" \
+  "$MODELS/loras" \
+  "$MODELS/detection" \
+  "$MODELS/controlnet"
+
+cd "$MODELS"
+
+# ====================== CORE MODELS ======================
+echo "📥 1. Wan model"
+aria2c -x 16 -s 16 --continue=true --dir="$MODELS/diffusion_models" \
   --out=WanModel.safetensors \
   "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan2_1-I2V-14B-480P_fp8_e4m3fn.safetensors"
 
-echo "📥 2. VAE → mo_vae.safetensors"
-aria2c -x 16 -s 16 --continue=true --dir=vae \
+echo "📥 2. VAE"
+aria2c -x 16 -s 16 --continue=true --dir="$MODELS/vae" \
   --out=mo_vae.safetensors \
   "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan2_1_VAE_bf16.safetensors"
 
-echo "📥 3. CLIP Vision → klip_vision.safetensors"
-aria2c -x 16 -s 16 --continue=true --dir=clip_vision \
+echo "📥 3. CLIP Vision"
+aria2c -x 16 -s 16 --continue=true --dir="$MODELS/clip_vision" \
   --out=klip_vision.safetensors \
   "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors"
 
-echo "📥 4. Text Encoder → text_enc.safetensors"
-aria2c -x 16 -s 16 --continue=true --dir=clip \
+echo "📥 4. Text Encoder"
+aria2c -x 16 -s 16 --continue=true --dir="$MODELS/clip" \
   --out=text_enc.safetensors \
   "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
 
-# ====================== LoRAs ======================
-echo ""
-echo "📥 5. LoRA light → light.safetensors"
-echo "   (актуальная замена: WanAnimate Relight LoRA от Kijai)"
-aria2c -x 16 -s 16 --continue=true --dir=loras \
+# ====================== LORAS ======================
+echo "📥 5. LoRA light"
+aria2c -x 16 -s 16 --continue=true --dir="$MODELS/loras" \
   --out=light.safetensors \
-  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/LoRAs/Wan22_relight/WanAnimate_relight_lora_fp16.safetensors"
+  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/LoRAs/Wan22_relight/WanAnimate_relight_lora_fp16.safetensors" || true
 
-echo "📥 6. LoRA wan_reworked → wan_reworked.safetensors"
-echo "   (актуальная замена: AccVid I2V 480P 14B LoRA от Kijai)"
-aria2c -x 16 -s 16 --continue=true --dir=loras \
+echo "📥 6. LoRA wan_reworked"
+aria2c -x 16 -s 16 --continue=true --dir="$MODELS/loras" \
   --out=wan_reworked.safetensors \
-  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_AccVid_I2V_480P_14B_lora_rank32_fp16.safetensors"
+  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_AccVid_I2V_480P_14B_lora_rank32_fp16.safetensors" || true
 
-echo "📥 7. LoRA WanPusa → WanPusa.safetensors"
-aria2c -x 16 -s 16 --continue=true --dir=loras \
+echo "📥 7. LoRA WanPusa"
+aria2c -x 16 -s 16 --continue=true --dir="$MODELS/loras" \
   --out=WanPusa.safetensors \
-  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/loras/WanPusa.safetensors"
+  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/loras/WanPusa.safetensors" || true
 
-echo "📥 8. LoRA WanFun.reworked → WanFun.reworked.safetensors"
-aria2c -x 16 -s 16 --continue=true --dir=loras \
+echo "📥 8. LoRA WanFun.reworked"
+aria2c -x 16 -s 16 --continue=true --dir="$MODELS/loras" \
   --out=WanFun.reworked.safetensors \
-  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/loras/WanFun.reworked.safetensors"
+  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/loras/WanFun.reworked.safetensors" || true
 
-  #!/bin/bash
-echo "🔧 PATCH: докачиваем всё недостающее для Animator V2.1..."
+echo "🔗 Creating symlink: wan.reworked.safetensors"
+ln -sf "$MODELS/loras/wan_reworked.safetensors" \
+       "$MODELS/loras/wan.reworked.safetensors" || true
 
-cd /workspace/ComfyUI/models
-
-# ====================== LoRAs ======================
-echo ""
-echo "📥 LoRA: WanPusa.safetensors"
-aria2c -x 16 -s 16 --continue=true --dir=loras \
-  --out=WanPusa.safetensors \
-  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/loras/WanPusa.safetensors"
-
-echo "📥 LoRA: WanFun.reworked.safetensors"
-aria2c -x 16 -s 16 --continue=true --dir=loras \
-  --out=WanFun.reworked.safetensors \
-  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/loras/WanFun.reworked.safetensors"
-
-# Воркфлоу ищет wan.reworked (с точкой), а файл называется wan_reworked (с подчёркиванием)
-# Создаём симлинк с нужным именем
-echo "🔗 Создаём симлинк: wan.reworked.safetensors → wan_reworked.safetensors"
-ln -sf /workspace/ComfyUI/models/loras/wan_reworked.safetensors \
-        /workspace/ComfyUI/models/loras/wan.reworked.safetensors
-
-# ====================== ONNX модели ======================
-echo ""
-mkdir -p onnx
-
-echo "📥 ONNX: yolov10m.onnx (~62 МБ)"
-aria2c -x 16 -s 16 --continue=true --dir=onnx \
+# ====================== ONNX / DETECTION ======================
+echo "📥 9. Detection: yolov10m.onnx"
+aria2c -x 16 -s 16 --continue=true --dir="$MODELS/detection" \
   --out=yolov10m.onnx \
   "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B/resolve/main/process_checkpoint/det/yolov10m.onnx"
 
-echo "📥 ONNX: vitpose_h_wholebody_model.onnx (~420 КБ)"
-aria2c -x 16 -s 16 --continue=true --dir=onnx \
+echo "📥 10. Detection: vitpose_h_wholebody_model.onnx"
+aria2c -x 16 -s 16 --continue=true --dir="$MODELS/detection" \
   --out=vitpose_h_wholebody_model.onnx \
   "https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_model.onnx"
 
-echo "📥 ONNX: vitpose_h_wholebody_data.bin (нужен рядом с .onnx)"
-aria2c -x 16 -s 16 --continue=true --dir=onnx \
+echo "📥 11. Detection: vitpose_h_wholebody_data.bin"
+aria2c -x 16 -s 16 --continue=true --dir="$MODELS/detection" \
   --out=vitpose_h_wholebody_data.bin \
   "https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_data.bin"
 
-# ====================== ControlNet ======================
-echo ""
-mkdir -p controlnet
-
-echo "📥 ControlNet: Wan21_Uni3C_controlnet_fp16.safetensors (~2 ГБ)"
-aria2c -x 16 -s 16 --continue=true --dir=controlnet \
+# ====================== CONTROLNET ======================
+echo "📥 12. ControlNet"
+aria2c -x 16 -s 16 --continue=true --dir="$MODELS/controlnet" \
   --out=Wan21_Uni3C_controlnet_fp16.safetensors \
-  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_Uni3C_controlnet_fp16.safetensors"
+  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_Uni3C_controlnet_fp16.safetensors" || true
 
+# ====================== FINAL STATUS ======================
 echo ""
-echo "✅ PATCH завершён!"
-echo "Теперь перезапусти ComfyUI и снова открой воркфлоу."
+echo "✅ ANIMATOR V2.1 setup finished"
+echo "Workflows: $WORKFLOWS"
 echo ""
-echo "Итоговый список файлов:"
-echo "  loras/WanPusa.safetensors"
-echo "  loras/WanFun.reworked.safetensors"
-echo "  loras/wan.reworked.safetensors  (симлинк на wan_reworked)"
-echo "  onnx/yolov10m.onnx"
-echo "  onnx/vitpose_h_wholebody_model.onnx"
-echo "  onnx/vitpose_h_wholebody_data.bin"
-echo "  controlnet/Wan21_Uni3C_controlnet_fp16.safetensors"
-
+echo "Installed model folders:"
+echo "  diffusion_models"
+echo "  vae"
+echo "  clip_vision"
+echo "  clip"
+echo "  loras"
+echo "  detection"
+echo "  controlnet"
 echo ""
-echo "✅ ANIMATOR V2.1 ПОЛНОСТЬЮ ГОТОВ!"
-echo "Workflows: /workspace/ComfyUI/user/default/workflows/"
-echo "Модели:    diffusion_models, vae, clip_vision, clip, loras"
+echo "If some optional LoRAs still fail, open workflow and keep those slots on NONE."
+echo "Main fix included: ONNX models now go to models/detection."
 echo ""
-echo "⚠️  ВАЖНО: light.safetensors и wan_reworked.safetensors скачаны"
-echo "    как актуальные замены из репо Kijai (оригинальные файлы удалены)."
-echo "    Если воркфлоу не работает — выставь lora_0 и lora_1 в none."
-echo ""
-echo "После перезапуска ComfyUI зайди в Manager → Check Missing (должно быть чисто)"
-echo "Готово к запуску! 🔥"
+echo "🔥 Ready."
