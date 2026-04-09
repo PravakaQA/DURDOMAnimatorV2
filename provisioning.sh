@@ -66,10 +66,10 @@ mkdir -p \
 cd "$MODELS"
 
 # ====================== CORE MODELS ======================
-echo "📥 1. Wan model"
+echo "📥 1. MAIN MODEL = Wan 2.2 Animate 14B (IMPORTANT FIX)"
 aria2c -x 16 -s 16 --continue=true --dir="$MODELS/diffusion_models" \
   --out=WanModel.safetensors \
-  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan2_1-I2V-14B-480P_fp8_e4m3fn.safetensors"
+  "https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled/resolve/main/Wan22Animate/Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors"
 
 echo "📥 2. VAE"
 aria2c -x 16 -s 16 --continue=true --dir="$MODELS/vae" \
@@ -111,7 +111,7 @@ echo "🔗 Creating symlink: wan.reworked.safetensors"
 ln -sf "$MODELS/loras/wan_reworked.safetensors" \
        "$MODELS/loras/wan.reworked.safetensors" || true
 
-# ====================== ONNX / DETECTION ======================
+# ====================== DETECTION ======================
 echo "📥 9. Detection: yolov10m.onnx"
 aria2c -x 16 -s 16 --continue=true --dir="$MODELS/detection" \
   --out=yolov10m.onnx \
@@ -133,21 +133,8 @@ aria2c -x 16 -s 16 --continue=true --dir="$MODELS/controlnet" \
   --out=Wan21_Uni3C_controlnet_fp16.safetensors \
   "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_Uni3C_controlnet_fp16.safetensors" || true
 
-# ====================== FINAL STATUS ======================
 echo ""
 echo "✅ ANIMATOR V2.1 setup finished"
-echo "Workflows: $WORKFLOWS"
-echo ""
-echo "Installed model folders:"
-echo "  diffusion_models"
-echo "  vae"
-echo "  clip_vision"
-echo "  clip"
-echo "  loras"
-echo "  detection"
-echo "  controlnet"
-echo ""
-echo "If some optional LoRAs still fail, open workflow and keep those slots on NONE."
-echo "Main fix included: ONNX models now go to models/detection."
-echo ""
+echo "Main fix: Wan 2.2 Animate model is now used as WanModel.safetensors"
+echo "If optional LoRAs fail, keep those slots on NONE."
 echo "🔥 Ready."
