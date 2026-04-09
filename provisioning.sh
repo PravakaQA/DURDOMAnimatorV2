@@ -2,9 +2,11 @@
 echo "🚀 Provisioning ANIMATOR V2.1 (VIDEO) - FULL AUTO FIXED started..."
 apt-get update && apt-get install -y git wget aria2 python3-pip unzip
 cd /workspace/ComfyUI/custom_nodes
+
 # ←←←←← ЭТО САМАЯ ВАЖНАЯ СТРОКА ←←←←←
 PIP="/venv/main/bin/pip"
 echo "📦 Используем venv pip: $PIP"
+
 echo "📥 Клонируем ВСЕ custom nodes для Animator V2.1..."
 git clone https://github.com/kijai/ComfyUI-WanVideoWrapper.git
 git clone https://github.com/kijai/ComfyUI-WanAnimatePreprocess.git
@@ -59,21 +61,19 @@ aria2c -x 16 -s 16 --continue=true --dir=clip \
   --out=text_enc.safetensors \
   "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
 
+# ====================== LoRAs ======================
+echo ""
 echo "📥 5. LoRA light → light.safetensors"
-LIGHT_URL="https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/loras/light.safetensors"
-HTTP_STATUS=$(curl -o /dev/null -s -w "%{http_code}" -I "$LIGHT_URL")
-if [ "$HTTP_STATUS" = "200" ]; then
-  aria2c -x 16 -s 16 --continue=true --dir=loras \
-    --out=light.safetensors \
-    "$LIGHT_URL"
-else
-  echo "⚠️ light.safetensors не найден публично (HTTP $HTTP_STATUS) — поставь вручную или замени на none в воркфлоу"
-fi
+echo "   (актуальная замена: WanAnimate Relight LoRA от Kijai)"
+aria2c -x 16 -s 16 --continue=true --dir=loras \
+  --out=light.safetensors \
+  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/LoRAs/Wan22_relight/WanAnimate_relight_lora_fp16.safetensors"
 
 echo "📥 6. LoRA wan_reworked → wan_reworked.safetensors"
+echo "   (актуальная замена: AccVid I2V 480P 14B LoRA от Kijai)"
 aria2c -x 16 -s 16 --continue=true --dir=loras \
   --out=wan_reworked.safetensors \
-  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/loras/wan_reworked.safetensors"
+  "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_AccVid_I2V_480P_14B_lora_rank32_fp16.safetensors"
 
 echo "📥 7. LoRA WanPusa → WanPusa.safetensors"
 aria2c -x 16 -s 16 --continue=true --dir=loras \
@@ -88,6 +88,11 @@ aria2c -x 16 -s 16 --continue=true --dir=loras \
 echo ""
 echo "✅ ANIMATOR V2.1 ПОЛНОСТЬЮ ГОТОВ!"
 echo "Workflows: /workspace/ComfyUI/user/default/workflows/"
-echo "Модели: diffusion_models, vae, clip_vision, clip, loras"
+echo "Модели:    diffusion_models, vae, clip_vision, clip, loras"
+echo ""
+echo "⚠️  ВАЖНО: light.safetensors и wan_reworked.safetensors скачаны"
+echo "    как актуальные замены из репо Kijai (оригинальные файлы удалены)."
+echo "    Если воркфлоу не работает — выставь lora_0 и lora_1 в none."
+echo ""
 echo "После перезапуска ComfyUI зайди в Manager → Check Missing (должно быть чисто)"
 echo "Готово к запуску! 🔥"
