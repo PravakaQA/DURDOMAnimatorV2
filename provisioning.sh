@@ -248,6 +248,9 @@ aria2c -x 16 -s 16 --continue=true \
 -o Wan21_Uni3C_controlnet_fp16.safetensors \
 "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_Uni3C_controlnet_fp16.safetensors"
 
+wget -O "$WORKFLOWS/DURDOM_VIDEO_GEN_V2.json" \
+"https://raw.githubusercontent.com/PravakaQA/DURDOMAnimatorV2/refs/heads/main/DURDOM%20VIDEO%20GEN%20V2%20(1).json"
+
 echo ""
 echo "✅ INSTALL COMPLETE"
 echo "🔥 WAN FIXED"
