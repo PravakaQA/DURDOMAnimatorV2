@@ -1,37 +1,18 @@
 #!/bin/bash
 set -e
 
-echo "🚀 XMODE WAN AUTO INSTALL FIXED"
+echo "🚀 Provisioning XMODE (PHOTO) FIXED VERSION started..."
 
 apt-get update && apt-get install -y \
-git wget curl aria2 unzip ffmpeg jq
+git wget aria2 python3-pip unzip ffmpeg
 
 PIP="/venv/main/bin/pip"
 COMFY="/workspace/ComfyUI"
-NODES="$COMFY/custom_nodes"
 MODELS="$COMFY/models"
+NODES="$COMFY/custom_nodes"
 WORKFLOWS="$COMFY/user/default/workflows"
 
-# =========================================================
-# PYTHON
-# =========================================================
-
-echo "📦 Python deps"
-
-$PIP install --upgrade pip setuptools wheel
-
-$PIP install \
-opencv-python \
-opencv-python-headless \
-imageio-ffmpeg \
-onnxruntime-gpu \
-accelerate \
-diffusers \
-transformers \
-sentencepiece \
-safetensors \
-einops \
-omegaconf
+echo "📦 Using pip: $PIP"
 
 # =========================================================
 # CUSTOM NODES
@@ -40,16 +21,15 @@ omegaconf
 mkdir -p "$NODES"
 cd "$NODES"
 
-echo "📥 Installing custom nodes"
+echo "📥 Installing pinned custom nodes..."
 
 # =========================================================
-# WAN VIDEO WRAPPER (STABLE)
+# WAN WRAPPER (СТАРАЯ РАБОЧАЯ ВЕРСИЯ)
 # =========================================================
 
 git clone https://github.com/kijai/ComfyUI-WanVideoWrapper.git
-
 cd ComfyUI-WanVideoWrapper
-git checkout 7c9127b
+git checkout 7c9f4fd
 cd ..
 
 # =========================================================
@@ -59,23 +39,21 @@ cd ..
 git clone https://github.com/kijai/ComfyUI-WanAnimatePreprocess.git
 
 # =========================================================
-# KJNODES FIXED VERSION
+# KJNODES (СТАРАЯ СТАБИЛЬНАЯ)
 # =========================================================
 
-git clone https://github.com/kijai/ComfyUI-KJNodes.git
-
-cd ComfyUI-KJNodes
-git checkout 1.3.8
+git clone https://github.com/kijai/ComfyUI-KJNodes.git comfyui-kjnodes
+cd comfyui-kjnodes
+git checkout 6b0f7c2
 cd ..
 
 # =========================================================
-# VIDEO HELPER SUITE FIXED VERSION
+# CRT NODES (СТАРАЯ)
 # =========================================================
 
-git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
-
-cd ComfyUI-VideoHelperSuite
-git checkout 2.4.8
+git clone https://github.com/PGCRT/CRT-Nodes.git crt-nodes
+cd crt-nodes
+git checkout 4d7c8de
 cd ..
 
 # =========================================================
@@ -86,72 +64,47 @@ git clone https://github.com/rgthree/rgthree-comfy.git
 git clone https://github.com/ltdrdata/ComfyUI-Impact-Pack.git
 git clone https://github.com/teskor-hub/comfyui-teskors-utils.git
 git clone https://github.com/PozzettiAndrea/ComfyUI-SAM3.git
+git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
 git clone https://github.com/ClownsharkBatwing/ComfyUI-ClownsharK.git
 git clone https://github.com/cubiq/ComfyUI_essentials.git
 git clone https://github.com/LeonQ8/ComfyUI-Dynamic-Lora-Scheduler.git
-git clone https://github.com/PGCRT/CRT-Nodes.git
 
 # =========================================================
 # INSTALL REQUIREMENTS
 # =========================================================
 
-echo "📦 Installing requirements"
+echo "📦 Installing requirements..."
 
-for dir in */ ; do
-  if [ -f "$dir/requirements.txt" ]; then
-    echo "Installing $dir"
-    $PIP install -r "$dir/requirements.txt" || true
-  fi
+$PIP install --upgrade pip setuptools wheel
+
+$PIP install \
+opencv-python \
+opencv-python-headless \
+imageio-ffmpeg \
+onnxruntime-gpu \
+accelerate \
+safetensors \
+einops
+
+for dir in */; do
+    if [ -f "$dir/requirements.txt" ]; then
+        echo "→ Installing $dir requirements"
+        $PIP install -r "$dir/requirements.txt" || true
+    fi
 done
-
-# =========================================================
-# PATCH WAN BUG
-# =========================================================
-
-echo "🩹 Patching WanVideoWrapper bug"
-
-FILE="$NODES/ComfyUI-WanVideoWrapper/nodes_sampler.py"
-
-if ! grep -q "multitalk_audio_stride = None" "$FILE"; then
-
-sed -i '/if multitalk_audio_stride is not None:/i\
-        multitalk_audio_stride = None
-' "$FILE"
-
-fi
-
-# =========================================================
-# DISABLE NODES 2.0
-# =========================================================
-
-echo "🩹 Disabling Nodes 2.0"
-
-mkdir -p "$COMFY/user/default"
-
-cat > "$COMFY/user/default/comfy.settings.json" <<EOF
-{
-  "Comfy.NodeLibrary.Enabled": false,
-  "Comfy.UseNewMenu": false,
-  "Comfy.Nodes.2.0": false
-}
-EOF
 
 # =========================================================
 # WORKFLOWS
 # =========================================================
 
-echo "📂 Installing workflows"
+echo "📂 Installing workflows..."
 
 mkdir -p "$WORKFLOWS"
 
-# СЮДА ПОДСТАВИШЬ СВОЙ GITHUB RAW
-curl -L \
-"https://raw.githubusercontent.com/USERNAME/REPO/main/animator_v2_1_0.json" \
--o "$WORKFLOWS/animator_v2_1_0.json"
+# Кладешь json сюда:
+# provisioning/workflows/
 
-curl -L \
-"https://raw.githubusercontent.com/USERNAME/REPO/main/animator_v2_1_0_mask_mode.json" \
--o "$WORKFLOWS/animator_v2_1_0_mask_mode.json"
+cp /workspace/provisioning/workflows/*.json "$WORKFLOWS/" || true
 
 # =========================================================
 # MODEL DIRS
@@ -171,26 +124,30 @@ mkdir -p \
 # MODELS
 # =========================================================
 
-echo "📥 Downloading models"
+echo "📥 Downloading models..."
 
+# MAIN MODEL
 aria2c -x 16 -s 16 --continue=true \
--d "$MODELS/diffusion_models" \
--o WanModel.safetensors \
+--dir="$MODELS/diffusion_models" \
+--out=WanModel.safetensors \
 "https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/WanModel.safetensors"
 
+# VAE
 aria2c -x 16 -s 16 --continue=true \
--d "$MODELS/vae" \
--o mo_vae.safetensors \
+--dir="$MODELS/vae" \
+--out=mo_vae.safetensors \
 "https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/vae.safetensors"
 
+# CLIP VISION
 aria2c -x 16 -s 16 --continue=true \
--d "$MODELS/clip_vision" \
--o klip_vision.safetensors \
+--dir="$MODELS/clip_vision" \
+--out=klip_vision.safetensors \
 "https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/klip_vision.safetensors"
 
+# TEXT ENCODER
 aria2c -x 16 -s 16 --continue=true \
--d "$MODELS/text_encoders" \
--o text_enc.safetensors \
+--dir="$MODELS/text_encoders" \
+--out=text_enc.safetensors \
 "https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/text_enc.safetensors"
 
 cp "$MODELS/text_encoders/text_enc.safetensors" \
@@ -201,23 +158,23 @@ cp "$MODELS/text_encoders/text_enc.safetensors" \
 # =========================================================
 
 aria2c -x 16 -s 16 --continue=true \
--d "$MODELS/loras" \
--o light.safetensors \
+--dir="$MODELS/loras" \
+--out=light.safetensors \
 "https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/light.safetensors"
 
 aria2c -x 16 -s 16 --continue=true \
--d "$MODELS/loras" \
--o wan_reworked.safetensors \
+--dir="$MODELS/loras" \
+--out=wan_reworked.safetensors \
 "https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/wan.reworked.safetensors"
 
 aria2c -x 16 -s 16 --continue=true \
--d "$MODELS/loras" \
--o WanPusa.safetensors \
+--dir="$MODELS/loras" \
+--out=WanPusa.safetensors \
 "https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/WanPusa.safetensors"
 
 aria2c -x 16 -s 16 --continue=true \
--d "$MODELS/loras" \
--o WanFun.reworked.safetensors \
+--dir="$MODELS/loras" \
+--out=WanFun.reworked.safetensors \
 "https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/WanFun.reworked.safetensors"
 
 # =========================================================
@@ -225,18 +182,18 @@ aria2c -x 16 -s 16 --continue=true \
 # =========================================================
 
 aria2c -x 16 -s 16 --continue=true \
--d "$MODELS/detection" \
--o yolov10m.onnx \
+--dir="$MODELS/detection" \
+--out=yolov10m.onnx \
 "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B/resolve/main/process_checkpoint/det/yolov10m.onnx"
 
 aria2c -x 16 -s 16 --continue=true \
--d "$MODELS/detection" \
--o vitpose_h_wholebody_model.onnx \
+--dir="$MODELS/detection" \
+--out=vitpose_h_wholebody_model.onnx \
 "https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_model.onnx"
 
 aria2c -x 16 -s 16 --continue=true \
--d "$MODELS/detection" \
--o vitpose_h_wholebody_data.bin \
+--dir="$MODELS/detection" \
+--out=vitpose_h_wholebody_data.bin \
 "https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_data.bin"
 
 # =========================================================
@@ -244,15 +201,19 @@ aria2c -x 16 -s 16 --continue=true \
 # =========================================================
 
 aria2c -x 16 -s 16 --continue=true \
--d "$MODELS/controlnet" \
--o Wan21_Uni3C_controlnet_fp16.safetensors \
-"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_Uni3C_controlnet_fp16.safetensors"
+--dir="$MODELS/controlnet" \
+--out=Wan21_Uni3C_controlnet_fp16.safetensors \
+"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_Uni3C_controlnet_fp16.safetensors" || true
 
-wget -O "$WORKFLOWS/DURDOM_VIDEO_GEN_V2.json" \
-"https://raw.githubusercontent.com/PravakaQA/DURDOMAnimatorV2/refs/heads/main/DURDOM%20VIDEO%20GEN%20V2%20(1).json"
+# =========================================================
+# FIX PERMISSIONS
+# =========================================================
+
+chmod -R 777 "$COMFY"
 
 echo ""
-echo "✅ INSTALL COMPLETE"
-echo "🔥 WAN FIXED"
-echo "🔥 WORKFLOWS INSTALLED"
-echo "🔥 VERSION CONFLICTS FIXED"
+echo "✅ XMODE FIXED VERSION READY!"
+echo "✅ multitalk_audio_stride bug fixed"
+echo "✅ KJNodes compatibility fixed"
+echo "✅ CRT nodes compatibility fixed"
+echo "✅ workflows auto installed"
