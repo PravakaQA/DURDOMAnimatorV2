@@ -131,7 +131,73 @@ for dir in */; do
         $PIP install -r "$dir/requirements.txt" || true
     fi
 done
+# =====================================================
+# PATCH SAM3 BLACKWELL MASKED ATTENTION
+# =====================================================
 
+echo "🩹 Applying SAM3-only Blackwell SDPA patch..."
+
+SAM3_ATTN_FILE="$NODES/ComfyUI-SAM3/nodes/sam3/attention.py"
+
+if [ ! -f "$SAM3_ATTN_FILE" ]; then
+    echo "❌ SAM3 attention.py not found:"
+    echo "$SAM3_ATTN_FILE"
+    exit 1
+fi
+
+$PYTHON - "$SAM3_ATTN_FILE" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+
+marker = "DURDOM_BLACKWELL_SAM3_SDPA_PATCH"
+
+old = """        if sdpa_mask is not None:
+            masked_fn = optimized_attention_for_device(q.device, mask=True)
+            out = masked_fn(q, k, v, heads=self.num_heads, mask=sdpa_mask, skip_reshape=True)
+        else:
+            out = sam3_attention(q, k, v, self.num_heads)
+"""
+
+new = """        if sdpa_mask is not None:
+            # DURDOM_BLACKWELL_SAM3_SDPA_PATCH
+            # Local fallback only for SAM3 masked attention.
+            # Regular Animator and WanVideo keep their existing attention backend.
+            out = torch.nn.functional.scaled_dot_product_attention(
+                q.contiguous(),
+                k.contiguous(),
+                v.contiguous(),
+                attn_mask=sdpa_mask.contiguous(),
+                dropout_p=0.0,
+                is_causal=False,
+            )
+        else:
+            out = sam3_attention(q, k, v, self.num_heads)
+"""
+
+if marker in text:
+    print("✅ SAM3 Blackwell patch already applied. Skipping.")
+    raise SystemExit(0)
+
+if old not in text:
+    print("❌ Expected SAM3 attention block not found.")
+    print("❌ ComfyUI-SAM3 source may have changed. Patch aborted safely.")
+    raise SystemExit(1)
+
+backup = path.with_suffix(".py.bak")
+backup.write_text(text, encoding="utf-8")
+
+path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+print(f"✅ Backup created: {backup}")
+print("✅ SAM3-only Blackwell SDPA patch applied.")
+PY
+
+$PYTHON -m py_compile "$SAM3_ATTN_FILE"
+
+echo "✅ SAM3 attention.py syntax check passed."
 # =====================================================
 # PATCH multitalk_audio_stride BUG
 # =====================================================
