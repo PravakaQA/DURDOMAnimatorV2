@@ -2,7 +2,7 @@
 
 set -e
 
-echo "🚀 XMODE Animator v2.1 ULTIMATE FIX starting..."
+echo "🚀 XMODE Animator v2 ULTIMATE FIX starting..."
 
 # =====================================================
 # BASE
@@ -263,8 +263,11 @@ echo "📂 Installing workflows..."
 
 mkdir -p "$WORKFLOWS"
 
-# копируем все json из provisioning (новый Animator_V2_1 в т.ч.)
-cp /workspace/provisioning/*.json "$WORKFLOWS/" 2>/dev/null || true
+cp /workspace/provisioning/animator_v2_1_0.json \
+"$WORKFLOWS/animator_v2_1_0.json" 2>/dev/null || true
+
+cp /workspace/provisioning/animator_v2_1_0_mask_mode.json \
+"$WORKFLOWS/animator_v2_1_0_mask_mode.json" 2>/dev/null || true
 
 # =====================================================
 # MODEL DIRS
@@ -283,138 +286,110 @@ mkdir -p \
 "$MODELS/controlnet"
 
 # =====================================================
-# DOWNLOAD HELPER (multi-source graceful fallback)
-# dl <dir> <out_filename> <url> [fallback_url ...]
+# MAIN MODEL
 # =====================================================
 
-# твоё личное зеркало — если канон-репа отвалится, льём отсюда
-MIRROR="https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main"
+echo "📥 Downloading WanModel..."
 
-dl () {
-    local dir="$1"; local out="$2"; shift 2
-    local url
-    for url in "$@"; do
-        echo "→ $out  ⇐  $url"
-        if aria2c -x 16 -s 16 --continue=true \
-            --dir="$dir" --out="$out" "$url"; then
-            echo "✅ $out"
-            return 0
-        else
-            echo "⚠️  не скачалось: $url — пробую следующий источник..."
-        fi
-    done
-    echo "❌ $out не скачался ни с одного источника"
-    return 1
-}
+aria2c -x 16 -s 16 --continue=true \
+--dir="$MODELS/diffusion_models" \
+--out=WanModel.safetensors \
+"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/WanModel.safetensors"
 
 # =====================================================
-# MAIN MODEL  (diffusion_models)
-# WanVideoModelLoader -> Wan2_2-Animate-14B_fp8_scaled_e4m3fn_KJ_v2.safetensors
+# VAE
 # =====================================================
 
-echo "📥 Downloading Wan2.2 Animate model..."
+echo "📥 Downloading mo_vae..."
 
-dl "$MODELS/diffusion_models" "Wan2_2-Animate-14B_fp8_scaled_e4m3fn_KJ_v2.safetensors" \
-"https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled/resolve/main/Wan22Animate/Wan2_2-Animate-14B_fp8_scaled_e4m3fn_KJ_v2.safetensors" \
-"$MIRROR/Wan2_2-Animate-14B_fp8_scaled_e4m3fn_KJ_v2.safetensors" \
-|| exit 1
-
-# =====================================================
-# VAE  (стандартный Wan2.1 VAE — точное имя из воркфлоу)
-# =====================================================
-
-echo "📥 Downloading VAE..."
-
-dl "$MODELS/vae" "wan_2.1_vae.safetensors" \
-"https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors" \
-"$MIRROR/wan_2.1_vae.safetensors" \
-|| exit 1
+aria2c -x 16 -s 16 --continue=true \
+--dir="$MODELS/vae" \
+--out=mo_vae.safetensors \
+"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/vae.safetensors"
 
 # =====================================================
 # CLIP VISION
 # =====================================================
 
-echo "📥 Downloading CLIP vision..."
+echo "📥 Downloading clip vision..."
 
-dl "$MODELS/clip_vision" "clip_vision_h.safetensors" \
-"https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors" \
-"$MIRROR/clip_vision_h.safetensors" \
-|| exit 1
+aria2c -x 16 -s 16 --continue=true \
+--dir="$MODELS/clip_vision" \
+--out=klip_vision.safetensors \
+"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/klip_vision.safetensors"
 
 # =====================================================
-# TEXT ENCODER (umt5) -> text_encoders + копия в clip
+# TEXT ENCODER
 # =====================================================
 
-echo "📥 Downloading text encoder (umt5)..."
+echo "📥 Downloading text encoder..."
 
-dl "$MODELS/text_encoders" "umt5_xxl_fp8_e4m3fn_scaled.safetensors" \
-"https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" \
-"$MIRROR/umt5_xxl_fp8_e4m3fn_scaled.safetensors" \
-|| exit 1
+aria2c -x 16 -s 16 --continue=true \
+--dir="$MODELS/text_encoders" \
+--out=text_enc.safetensors \
+"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/text_enc.safetensors"
 
 cp \
-"$MODELS/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" \
-"$MODELS/clip/umt5_xxl_fp8_e4m3fn_scaled.safetensors" || true
+"$MODELS/text_encoders/text_enc.safetensors" \
+"$MODELS/clip/text_enc.safetensors" || true
 
 # =====================================================
-# LORAS  (WanVideoLoraSelectMulti — 4 шт, точные имена)
-# ⚠️ канон-URL'ы лор проверь: если 404 — закинь файл в свой OFMHUB,
-#    фолбэк на $MIRROR подхватит автоматически
+# LORAS
 # =====================================================
 
 echo "📥 Downloading LoRAs..."
 
-dl "$MODELS/loras" "lightx2v_I2V_14B_480p_cfg_step_distill_rank256_bf16.safetensors" \
-"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank256_bf16.safetensors" \
-"$MIRROR/lightx2v_I2V_14B_480p_cfg_step_distill_rank256_bf16.safetensors" \
-|| echo "⚠️ lightx2v rank256 пропущен — добавь источник"
+aria2c -x 16 -s 16 --continue=true \
+--dir="$MODELS/loras" \
+--out=light.safetensors \
+"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/light.safetensors"
 
-dl "$MODELS/loras" "wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors" \
-"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Lightx2v/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors" \
-"$MIRROR/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors" \
-|| echo "⚠️ lightx2v 4steps high_noise пропущен — добавь источник"
+aria2c -x 16 -s 16 --continue=true \
+--dir="$MODELS/loras" \
+--out=wan_reworked.safetensors \
+"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/wan.reworked.safetensors"
 
-dl "$MODELS/loras" "Wan21_PusaV1_LoRA_14B_rank512_bf16.safetensors" \
-"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_PusaV1_LoRA_14B_rank512_bf16.safetensors" \
-"$MIRROR/Wan21_PusaV1_LoRA_14B_rank512_bf16.safetensors" \
-|| echo "⚠️ PusaV1 пропущен — добавь источник"
+aria2c -x 16 -s 16 --continue=true \
+--dir="$MODELS/loras" \
+--out=WanPusa.safetensors \
+"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/WanPusa.safetensors"
 
-dl "$MODELS/loras" "Wan2.2-Fun-A14B-InP-low-noise-HPS2.1.safetensors" \
-"$MIRROR/Wan2.2-Fun-A14B-InP-low-noise-HPS2.1.safetensors" \
-|| echo "⚠️ Fun-A14B-HPS2.1 пропущен — это кастомная лора, лей со своего OFMHUB"
+aria2c -x 16 -s 16 --continue=true \
+--dir="$MODELS/loras" \
+--out=WanFun.reworked.safetensors \
+"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/WanFun.reworked.safetensors"
 
 # =====================================================
-# DETECTION  (OnnxDetectionModelLoader)
+# DETECTION
 # =====================================================
 
 echo "📥 Downloading detection models..."
 
-dl "$MODELS/detection" "yolov10m.onnx" \
-"https://huggingface.co/Wan-AI/Wan2.2-Animate-14B/resolve/main/process_checkpoint/det/yolov10m.onnx" \
-"$MIRROR/yolov10m.onnx" \
-|| exit 1
+aria2c -x 16 -s 16 --continue=true \
+--dir="$MODELS/detection" \
+--out=yolov10m.onnx \
+"https://huggingface.co/Wan-AI/Wan2.2-Animate-14B/resolve/main/process_checkpoint/det/yolov10m.onnx"
 
-dl "$MODELS/detection" "vitpose_h_wholebody_model.onnx" \
-"https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_model.onnx" \
-"$MIRROR/vitpose_h_wholebody_model.onnx" \
-|| exit 1
+aria2c -x 16 -s 16 --continue=true \
+--dir="$MODELS/detection" \
+--out=vitpose_h_wholebody_model.onnx \
+"https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_model.onnx"
 
-# .bin данные к vitpose onnx (внешний вес)
-dl "$MODELS/detection" "vitpose_h_wholebody_data.bin" \
-"https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_data.bin" \
-"$MIRROR/vitpose_h_wholebody_data.bin" \
-|| true
+aria2c -x 16 -s 16 --continue=true \
+--dir="$MODELS/detection" \
+--out=vitpose_h_wholebody_data.bin \
+"https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_data.bin"
 
 # =====================================================
-# CONTROLNET  (WanVideoUni3C_ControlnetLoader)
+# CONTROLNET
 # =====================================================
 
-echo "📥 Downloading ControlNet (Uni3C)..."
+echo "📥 Downloading ControlNet..."
 
-dl "$MODELS/controlnet" "Wan21_Uni3C_controlnet_fp16.safetensors" \
-"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_Uni3C_controlnet_fp16.safetensors" \
-"$MIRROR/Wan21_Uni3C_controlnet_fp16.safetensors" \
-|| exit 1
+aria2c -x 16 -s 16 --continue=true \
+--dir="$MODELS/controlnet" \
+--out=Wan21_Uni3C_controlnet_fp16.safetensors \
+"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_Uni3C_controlnet_fp16.safetensors"
 
 # =====================================================
 # FINAL
@@ -422,12 +397,13 @@ dl "$MODELS/controlnet" "Wan21_Uni3C_controlnet_fp16.safetensors" \
 
 echo ""
 echo "======================================="
-echo "✅ Animator v2.1 READY"
-echo "✅ Модели под НОВЫЙ воркфлоу (точные имена)"
+echo "✅ Animator v2 READY"
 echo "✅ multitalk_audio_stride FIXED"
-echo "✅ SAM3 Blackwell patch"
-echo "✅ KJNodes 2.4.8 / CRT-Nodes 1.3.9"
+echo "✅ mo_vae FIXED"
+echo "✅ KJNodes 2.4.8"
+echo "✅ CRT-Nodes 1.3.9"
 echo "✅ WanVideoWrapper stable commit"
+echo "✅ OFMHUB models installed"
 echo "======================================="
 echo ""
 echo "🔥 RESTART COMFYUI NOW 🔥"
