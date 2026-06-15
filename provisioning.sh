@@ -56,9 +56,6 @@ SPAM_SIG='sinlab|sinlab\.art|landing\.html|start-here'
 echo "############# base #############"
 apt-get update -y && apt-get install -y git wget curl aria2 ffmpeg unzip || true
 $PIP install --upgrade pip setuptools wheel || true
-# onnxruntime-gpu — иначе детект позы (yolo/vitpose .onnx) считается на CPU = ОЧЕНЬ долго
-$PIP uninstall -y onnxruntime 2>/dev/null || true
-$PIP install --no-cache-dir onnxruntime-gpu || true
 
 echo "############# ComfyUI ($COMFY_COMMIT / 0.10.0) #############"
 if [[ ! -d "$COMFY/.git" ]]; then
@@ -86,6 +83,17 @@ done
 
 # фикс LayerStyle (guidedFilter) — опционально
 $PIP install --no-cache-dir opencv-contrib-python 2>/dev/null || true
+
+# ВАЖНО (делаем ПОСЛЕ нод, иначе их requirements вернут CPU-onnxruntime):
+# поза (yolo/vitpose .onnx) должна считаться на GPU. Оба пакета вместе ломают CUDA —
+# поэтому сносим оба и ставим ТОЛЬКО onnxruntime-gpu.
+echo "############# onnxruntime-gpu (GPU для детекта позы) #############"
+$PIP uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null || true
+$PIP install --no-cache-dir onnxruntime-gpu || true
+# либы CUDA/cuDNN для onnxruntime (если не подхватит из torch)
+$PIP install --no-cache-dir nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 2>/dev/null || true
+echo "проверка провайдеров (должен быть CUDAExecutionProvider):"
+/venv/main/bin/python -c "import onnxruntime as o; print(o.get_available_providers())" 2>/dev/null || true
 
 # =====================================================================
 echo "############# 🧹 sanitize: вырезаю рекламные редиректы #############"
