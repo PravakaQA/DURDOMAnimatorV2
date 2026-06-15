@@ -1,409 +1,146 @@
 #!/bin/bash
-
+# =====================================================================
+# Animator V2.1 — provisioning (на базе рабочего шаблона animka.sh)
+# ComfyUI 0.10.0 + те же ноды (по коммитам) + реальные URL моделей.
+# ВСТРОЕНА авто-чистка рекламного редиректа (teskors ts_photo_preview.js и пр.).
+# Подходит как PROVISIONING_SCRIPT на Vast.ai — гонится сам при запуске,
+# ComfyUI стартует портал, поэтому здесь его НЕ запускаем.
+# =====================================================================
 set -e
+source /venv/main/bin/activate 2>/dev/null || true
 
-echo "🚀 XMODE Animator v2 ULTIMATE FIX starting..."
+WORKSPACE="${WORKSPACE:-/workspace}"
+COMFY="${WORKSPACE}/ComfyUI"
+PIP="pip"
+HF_TOKEN="${HF_TOKEN:-}"   # опц.: export HF_TOKEN=... если упрётся в гейт HF
 
-# =====================================================
-# BASE
-# =====================================================
+COMFY_COMMIT="9d273d3a"    # ComfyUI 0.10.0 (как в рабочем шаблоне)
 
-apt-get update
-apt-get install -y \
-git \
-wget \
-curl \
-aria2 \
-ffmpeg \
-unzip \
-python3-pip
+# repo|commit
+NODES=(
+  "https://github.com/kijai/ComfyUI-WanVideoWrapper|088128b"
+  "https://github.com/kijai/ComfyUI-KJNodes|3e80b28"
+  "https://github.com/kijai/ComfyUI-WanAnimatePreprocess|0e0b6a2"
+  "https://github.com/kijai/ComfyUI-segment-anything-2|0c35fff"
+  "https://github.com/PozzettiAndrea/ComfyUI-SAM3.git|de0ff5d"
+  "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite|4ee72c0"
+  "https://github.com/cubiq/ComfyUI_essentials|9d9f4be"
+  "https://github.com/rgthree/rgthree-comfy|738105a"
+  "https://github.com/yolain/ComfyUI-Easy-Use|625efbf"
+  "https://github.com/chflame163/ComfyUI_LayerStyle|d94bef1"
+  "https://github.com/fq393/ComfyUI-ZMG-Nodes|51510c6"
+  "https://github.com/jnxmx/ComfyUI_HuggingFace_Downloader|fe86409"
+  "https://github.com/teskor-hub/comfyui-teskors-utils.git|9ae6df6"
+)
 
-PIP="/venv/main/bin/pip"
-PYTHON="/venv/main/bin/python"
+# папка | имя_файла | url
+MODELS=(
+  "text_encoders|umt5_xxl_fp8_e4m3fn_scaled.safetensors|https://huggingface.co/f5aiteam/CLIP/resolve/main/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
+  "clip_vision|clip_vision_h.safetensors|https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors"
+  "vae|wan_2.1_vae.safetensors|https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors"
+  "diffusion_models|Wan2_2-Animate-14B_fp8_scaled_e4m3fn_KJ_v2.safetensors|https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled/resolve/main/Wan22Animate/Wan2_2-Animate-14B_fp8_scaled_e4m3fn_KJ_v2.safetensors"
+  "loras|lightx2v_I2V_14B_480p_cfg_step_distill_rank256_bf16.safetensors|https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank256_bf16.safetensors"
+  "loras|wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors|https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors"
+  "loras|Wan2.2-Fun-A14B-InP-low-noise-HPS2.1.safetensors|https://huggingface.co/alibaba-pai/Wan2.2-Fun-Reward-LoRAs/resolve/main/Wan2.2-Fun-A14B-InP-low-noise-HPS2.1.safetensors"
+  "loras|Wan21_PusaV1_LoRA_14B_rank512_bf16.safetensors|https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Pusa/Wan21_PusaV1_LoRA_14B_rank512_bf16.safetensors"
+  "detection|yolov10m.onnx|https://huggingface.co/Wan-AI/Wan2.2-Animate-14B/resolve/main/process_checkpoint/det/yolov10m.onnx"
+  "detection|vitpose_h_wholebody_model.onnx|https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_model.onnx"
+  "detection|vitpose_h_wholebody_data.bin|https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_data.bin"
+  "upscale_models|4xUltrasharp_4xUltrasharpV10.pt|https://huggingface.co/gazsuv/pussydetectorv4/resolve/main/4xUltrasharp_4xUltrasharpV10.pt"
+)
 
-COMFY="/workspace/ComfyUI"
+# сигнатуры рекламного редиректа (добавь новые домены, если всплывут)
+SPAM_SIG='sinlab|sinlab\.art|landing\.html|start-here'
 
-MODELS="$COMFY/models"
-NODES="$COMFY/custom_nodes"
-WORKFLOWS="$COMFY/user/default/workflows"
+# =====================================================================
+echo "############# base #############"
+apt-get update -y && apt-get install -y git wget curl aria2 ffmpeg unzip || true
+$PIP install --upgrade pip setuptools wheel || true
+# onnxruntime-gpu — иначе детект позы (yolo/vitpose .onnx) считается на CPU = ОЧЕНЬ долго
+$PIP uninstall -y onnxruntime 2>/dev/null || true
+$PIP install --no-cache-dir onnxruntime-gpu || true
 
-echo "📦 Using Python:"
-$PYTHON --version
+echo "############# ComfyUI ($COMFY_COMMIT / 0.10.0) #############"
+if [[ ! -d "$COMFY/.git" ]]; then
+    git clone https://github.com/comfyanonymous/ComfyUI.git "$COMFY"
+fi
+cd "$COMFY"
+git fetch --all -q || true
+git checkout "$COMFY_COMMIT" 2>/dev/null || echo "⚠️ не смог переключиться на $COMFY_COMMIT (оставляю текущий)"
+[[ -f requirements.txt ]] && $PIP install --no-cache-dir -r requirements.txt || true
 
-echo "📦 Using Pip:"
-$PIP --version
-
-# =====================================================
-# CLEAN BROKEN STUFF
-# =====================================================
-
-echo "🧹 Cleaning old broken nodes..."
-
-rm -rf "$NODES/comfyui-kjnodes" || true
-rm -rf "$NODES/ComfyUI-KJNodes" || true
-rm -rf "$NODES/CRT-Nodes" || true
-rm -rf "$NODES/crt-nodes" || true
-rm -rf "$NODES/ComfyUI-WanVideoWrapper" || true
-
-# =====================================================
-# PIP CORE
-# =====================================================
-
-echo "📦 Installing core packages..."
-
-$PIP install --upgrade \
-pip \
-setuptools \
-wheel
-
-$PIP install --upgrade --force-reinstall \
-opencv-python \
-opencv-python-headless \
-numpy \
-pillow \
-einops \
-safetensors \
-accelerate \
-transformers \
-diffusers \
-sentencepiece \
-timm \
-imageio \
-imageio-ffmpeg \
-onnxruntime-gpu \
-scipy \
-scikit-image
-
-# =====================================================
-# CUSTOM NODES
-# =====================================================
-
-cd "$NODES"
-
-echo "📥 Installing WanVideoWrapper..."
-
-git clone https://github.com/kijai/ComfyUI-WanVideoWrapper.git
-
-cd ComfyUI-WanVideoWrapper
-
-# СТАБИЛЬНЫЙ КОММИТ ДО БАГА
-git checkout 6fce1f7 || true
-
-cd ..
-
-echo "📥 Installing WanAnimatePreprocess..."
-git clone https://github.com/kijai/ComfyUI-WanAnimatePreprocess.git || true
-
-echo "📥 Installing KJNodes 2.4.8..."
-git clone https://github.com/kijai/ComfyUI-KJNodes.git comfyui-kjnodes
-
-cd comfyui-kjnodes
-git checkout 2.4.8 || true
-cd ..
-
-echo "📥 Installing CRT-Nodes 1.3.9..."
-git clone https://github.com/PGCRT/CRT-Nodes.git crt-nodes
-
-cd crt-nodes
-git checkout 1.3.9 || true
-cd ..
-
-echo "📥 Installing other nodes..."
-
-git clone https://github.com/rgthree/rgthree-comfy.git || true
-git clone https://github.com/ltdrdata/ComfyUI-Impact-Pack.git || true
-git clone https://github.com/teskor-hub/comfyui-teskors-utils.git || true
-git clone https://github.com/PozzettiAndrea/ComfyUI-SAM3.git || true
-git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git || true
-git clone https://github.com/ClownsharkBatwing/ComfyUI-ClownsharK.git || true
-git clone https://github.com/cubiq/ComfyUI_essentials.git || true
-git clone https://github.com/LeonQ8/ComfyUI-Dynamic-Lora-Scheduler.git || true
-
-# =====================================================
-# INSTALL NODE REQUIREMENTS
-# =====================================================
-
-echo "📦 Installing node requirements..."
-
-for dir in */; do
-    if [ -f "$dir/requirements.txt" ]; then
-        echo "→ $dir"
-        $PIP install -r "$dir/requirements.txt" || true
+echo "############# custom nodes (по коммитам) #############"
+mkdir -p "$COMFY/custom_nodes"
+cd "$COMFY/custom_nodes"
+for entry in "${NODES[@]}"; do
+    repo="${entry%%|*}"; commit="${entry##*|}"
+    dir="${repo##*/}"; dir="${dir%.git}"
+    if [[ ! -d "$dir/.git" ]]; then
+        echo "→ clone $dir"
+        git clone --recursive "$repo" "$dir" || { echo "[!] clone failed: $repo"; continue; }
     fi
+    ( cd "$dir" && git fetch -q --all || true
+      git checkout "$commit" 2>/dev/null || echo "  ⚠️ $dir: коммит $commit недоступен, оставляю default" )
+    [[ -f "$dir/requirements.txt" ]] && $PIP install --no-cache-dir -r "$dir/requirements.txt" || true
 done
-# =====================================================
-# PATCH SAM3 BLACKWELL MASKED ATTENTION
-# =====================================================
 
-echo "🩹 Applying SAM3-only Blackwell SDPA patch..."
+# фикс LayerStyle (guidedFilter) — опционально
+$PIP install --no-cache-dir opencv-contrib-python 2>/dev/null || true
 
-SAM3_ATTN_FILE="$NODES/ComfyUI-SAM3/nodes/sam3/attention.py"
-
-if [ ! -f "$SAM3_ATTN_FILE" ]; then
-    echo "❌ SAM3 attention.py not found:"
-    echo "$SAM3_ATTN_FILE"
-    exit 1
+# =====================================================================
+echo "############# 🧹 sanitize: вырезаю рекламные редиректы #############"
+# Удаляем ТОЛЬКО заражённые web-ассеты (js/html/css) — сами ноды (TS*, и т.д.)
+# остаются рабочими. Это нейтрализует teskors ts_photo_preview.js и любой
+# аналогичный инъектор, не ломая функционал воркфлоу.
+bad=$(grep -rilaE "$SPAM_SIG" "$COMFY/custom_nodes" \
+        --include=*.js --include=*.html --include=*.css 2>/dev/null)
+if [[ -n "$bad" ]]; then
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        echo "🧹 удаляю инъектор: $f"
+        rm -f "$f"
+    done <<< "$bad"
+else
+    echo "чисто — рекламных вставок не найдено"
 fi
-
-$PYTHON - "$SAM3_ATTN_FILE" <<'PY'
-from pathlib import Path
-import sys
-
-path = Path(sys.argv[1])
-text = path.read_text(encoding="utf-8")
-
-marker = "DURDOM_BLACKWELL_SAM3_SDPA_PATCH"
-
-old = """        if sdpa_mask is not None:
-            masked_fn = optimized_attention_for_device(q.device, mask=True)
-            out = masked_fn(q, k, v, heads=self.num_heads, mask=sdpa_mask, skip_reshape=True)
-        else:
-            out = sam3_attention(q, k, v, self.num_heads)
-"""
-
-new = """        if sdpa_mask is not None:
-            # DURDOM_BLACKWELL_SAM3_SDPA_PATCH
-            # Local fallback only for SAM3 masked attention.
-            # Regular Animator and WanVideo keep their existing attention backend.
-            out = torch.nn.functional.scaled_dot_product_attention(
-                q.contiguous(),
-                k.contiguous(),
-                v.contiguous(),
-                attn_mask=sdpa_mask.contiguous(),
-                dropout_p=0.0,
-                is_causal=False,
-            )
-        else:
-            out = sam3_attention(q, k, v, self.num_heads)
-"""
-
-if marker in text:
-    print("✅ SAM3 Blackwell patch already applied. Skipping.")
-    raise SystemExit(0)
-
-if old not in text:
-    print("❌ Expected SAM3 attention block not found.")
-    print("❌ ComfyUI-SAM3 source may have changed. Patch aborted safely.")
-    raise SystemExit(1)
-
-backup = path.with_suffix(".py.bak")
-backup.write_text(text, encoding="utf-8")
-
-path.write_text(text.replace(old, new, 1), encoding="utf-8")
-
-print(f"✅ Backup created: {backup}")
-print("✅ SAM3-only Blackwell SDPA patch applied.")
-PY
-
-$PYTHON -m py_compile "$SAM3_ATTN_FILE"
-
-echo "✅ SAM3 attention.py syntax check passed."
-# =====================================================
-# PATCH multitalk_audio_stride BUG
-# =====================================================
-
-echo "🩹 Patching multitalk_audio_stride bug..."
-
-SAMPLER_FILE="$NODES/ComfyUI-WanVideoWrapper/nodes_sampler.py"
-
-if [ -f "$SAMPLER_FILE" ]; then
-
-python3 << EOF
-from pathlib import Path
-
-path = Path("$SAMPLER_FILE")
-
-text = path.read_text()
-
-if "multitalk_audio_stride = None" not in text:
-
-    text = text.replace(
-        "def process(",
-        "def process("
-    )
-
-    marker = "def process("
-
-    idx = text.find(marker)
-
-    if idx != -1:
-        line_end = text.find("):", idx)
-
-        if line_end != -1:
-            insert_pos = text.find("\n", line_end) + 1
-
-            text = (
-                text[:insert_pos]
-                + "        multitalk_audio_stride = None\n"
-                + text[insert_pos:]
-            )
-
-    path.write_text(text)
-
-print("PATCHED")
-EOF
-
-fi
-
-# =====================================================
-# EXTRA FAILSAFE PATCH
-# =====================================================
-
-echo "🩹 Applying secondary failsafe patch..."
-
-sed -i \
-'s/if multitalk_audio_stride is not None:/if "multitalk_audio_stride" in locals() and multitalk_audio_stride is not None:/g' \
-"$SAMPLER_FILE" || true
-
-# =====================================================
-# WORKFLOWS
-# =====================================================
-
-echo "📂 Installing workflows..."
-
-mkdir -p "$WORKFLOWS"
-
-cp /workspace/provisioning/animator_v2_1_0.json \
-"$WORKFLOWS/animator_v2_1_0.json" 2>/dev/null || true
-
-cp /workspace/provisioning/animator_v2_1_0_mask_mode.json \
-"$WORKFLOWS/animator_v2_1_0_mask_mode.json" 2>/dev/null || true
-
-# =====================================================
-# MODEL DIRS
-# =====================================================
-
-echo "📁 Creating model folders..."
-
-mkdir -p \
-"$MODELS/diffusion_models" \
-"$MODELS/vae" \
-"$MODELS/text_encoders" \
-"$MODELS/clip_vision" \
-"$MODELS/clip" \
-"$MODELS/loras" \
-"$MODELS/detection" \
-"$MODELS/controlnet"
-
-# =====================================================
-# MAIN MODEL
-# =====================================================
-
-echo "📥 Downloading WanModel..."
-
-aria2c -x 16 -s 16 --continue=true \
---dir="$MODELS/diffusion_models" \
---out=WanModel.safetensors \
-"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/WanModel.safetensors"
-
-# =====================================================
-# VAE
-# =====================================================
-
-echo "📥 Downloading mo_vae..."
-
-aria2c -x 16 -s 16 --continue=true \
---dir="$MODELS/vae" \
---out=mo_vae.safetensors \
-"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/vae.safetensors"
-
-# =====================================================
-# CLIP VISION
-# =====================================================
-
-echo "📥 Downloading clip vision..."
-
-aria2c -x 16 -s 16 --continue=true \
---dir="$MODELS/clip_vision" \
---out=klip_vision.safetensors \
-"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/klip_vision.safetensors"
-
-# =====================================================
-# TEXT ENCODER
-# =====================================================
-
-echo "📥 Downloading text encoder..."
-
-aria2c -x 16 -s 16 --continue=true \
---dir="$MODELS/text_encoders" \
---out=text_enc.safetensors \
-"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/text_enc.safetensors"
-
-cp \
-"$MODELS/text_encoders/text_enc.safetensors" \
-"$MODELS/clip/text_enc.safetensors" || true
-
-# =====================================================
-# LORAS
-# =====================================================
-
-echo "📥 Downloading LoRAs..."
-
-aria2c -x 16 -s 16 --continue=true \
---dir="$MODELS/loras" \
---out=light.safetensors \
-"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/light.safetensors"
-
-aria2c -x 16 -s 16 --continue=true \
---dir="$MODELS/loras" \
---out=wan_reworked.safetensors \
-"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/wan.reworked.safetensors"
-
-aria2c -x 16 -s 16 --continue=true \
---dir="$MODELS/loras" \
---out=WanPusa.safetensors \
-"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/WanPusa.safetensors"
-
-aria2c -x 16 -s 16 --continue=true \
---dir="$MODELS/loras" \
---out=WanFun.reworked.safetensors \
-"https://huggingface.co/wdsfdsdf/OFMHUB/resolve/main/WanFun.reworked.safetensors"
-
-# =====================================================
-# DETECTION
-# =====================================================
-
-echo "📥 Downloading detection models..."
-
-aria2c -x 16 -s 16 --continue=true \
---dir="$MODELS/detection" \
---out=yolov10m.onnx \
-"https://huggingface.co/Wan-AI/Wan2.2-Animate-14B/resolve/main/process_checkpoint/det/yolov10m.onnx"
-
-aria2c -x 16 -s 16 --continue=true \
---dir="$MODELS/detection" \
---out=vitpose_h_wholebody_model.onnx \
-"https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_model.onnx"
-
-aria2c -x 16 -s 16 --continue=true \
---dir="$MODELS/detection" \
---out=vitpose_h_wholebody_data.bin \
-"https://huggingface.co/Kijai/vitpose_comfy/resolve/main/onnx/vitpose_h_wholebody_data.bin"
-
-# =====================================================
-# CONTROLNET
-# =====================================================
-
-echo "📥 Downloading ControlNet..."
-
-aria2c -x 16 -s 16 --continue=true \
---dir="$MODELS/controlnet" \
---out=Wan21_Uni3C_controlnet_fp16.safetensors \
-"https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_Uni3C_controlnet_fp16.safetensors"
-
-# =====================================================
-# FINAL
-# =====================================================
+# если сигнатура вдруг в .py — авто не трогаем, только предупреждаем
+pybad=$(grep -rilaE "$SPAM_SIG" "$COMFY/custom_nodes" --include=*.py 2>/dev/null)
+[[ -n "$pybad" ]] && echo "⚠️ ВНИМАНИЕ: сигнатура в .py (проверь руками): $pybad"
+
+# =====================================================================
+echo "############# models #############"
+dl () {
+    local sub="$1" out="$2" url="$3"
+    local dir="$COMFY/models/$sub"; mkdir -p "$dir"
+    if [[ -e "$dir/$out" && $(stat -c%s "$dir/$out" 2>/dev/null||echo 0) -gt 1000000 ]]; then
+        echo "✅ есть: $sub/$out"; return 0
+    fi
+    local hdr=()
+    [[ -n "$HF_TOKEN" && "$url" == *huggingface.co* ]] && hdr=(--header="Authorization: Bearer $HF_TOKEN")
+    echo "→ $sub/$out"
+    aria2c -x16 -s16 --continue=true "${hdr[@]}" --dir="$dir" --out="$out" "$url" \
+        || echo "  [!] не скачалось: $url"
+}
+for m in "${MODELS[@]}"; do
+    IFS='|' read -r sub out url <<< "$m"
+    dl "$sub" "$out" "$url"
+done
+
+# umt5 нужен и в clip
+mkdir -p "$COMFY/models/clip"
+[[ -e "$COMFY/models/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" && \
+   ! -e "$COMFY/models/clip/umt5_xxl_fp8_e4m3fn_scaled.safetensors" ]] && \
+   ln -s "$COMFY/models/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" \
+         "$COMFY/models/clip/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
+
+# =====================================================================
+echo "############# workflows (если положил рядом) #############"
+WF="$COMFY/user/default/workflows"; mkdir -p "$WF"
+cp "$WORKSPACE"/provisioning/*.json "$WF/" 2>/dev/null || true
+cp "$WORKSPACE"/*.json "$WF/" 2>/dev/null || true
 
 echo ""
-echo "======================================="
-echo "✅ Animator v2 READY"
-echo "✅ multitalk_audio_stride FIXED"
-echo "✅ mo_vae FIXED"
-echo "✅ KJNodes 2.4.8"
-echo "✅ CRT-Nodes 1.3.9"
-echo "✅ WanVideoWrapper stable commit"
-echo "✅ OFMHUB models installed"
-echo "======================================="
-echo ""
-echo "🔥 RESTART COMFYUI NOW 🔥"
+echo "==========================================="
+echo "✅ Готово. ComfyUI 0.10.0 + ноды + модели + рекламный редирект вычищен."
+echo "ℹ️ ComfyUI поднимет портал инстанса сам (тут не запускаем)."
+echo "==========================================="
