@@ -3,6 +3,7 @@
 # Animator V2.1 — provisioning (на базе рабочего шаблона animka.sh)
 # ComfyUI 0.10.0 + те же ноды (по коммитам) + реальные URL моделей.
 # ВСТРОЕНА авто-чистка рекламного редиректа (teskors ts_photo_preview.js и пр.).
+# ВСТРОЕН авто-фикс onnxruntime-gpu под нужный CUDA (cu13/cu12) для детекта позы.
 # Подходит как PROVISIONING_SCRIPT на Vast.ai — гонится сам при запуске,
 # ComfyUI стартует портал, поэтому здесь его НЕ запускаем.
 # =====================================================================
@@ -85,15 +86,39 @@ done
 $PIP install --no-cache-dir opencv-contrib-python 2>/dev/null || true
 
 # ВАЖНО (делаем ПОСЛЕ нод, иначе их requirements вернут CPU-onnxruntime):
-# поза (yolo/vitpose .onnx) должна считаться на GPU. Оба пакета вместе ломают CUDA —
-# поэтому сносим оба и ставим ТОЛЬКО onnxruntime-gpu.
+# поза (yolo/vitpose .onnx) должна считаться на GPU. onnxruntime + onnxruntime-gpu
+# вместе ломают CUDA — поэтому сносим оба и ставим ТОЛЬКО onnxruntime-gpu.
 echo "############# onnxruntime-gpu (GPU для детекта позы) #############"
 $PIP uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null || true
 $PIP install --no-cache-dir onnxruntime-gpu || true
-# либы CUDA/cuDNN для onnxruntime (если не подхватит из torch)
-$PIP install --no-cache-dir nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 2>/dev/null || true
+
+# Свежие onnxruntime-gpu (>=1.23) собраны под CUDA 13 и требуют libcudart.so.13,
+# а torch на поде обычно cu12 (только libcudart.so.12) → ImportError, нода
+# WanAnimatePreprocess падает ("missing nodes"). Определяем, какой major нужен
+# онниксу, и доставляем РОВНО те nvidia-CUDA-либы.
+# !!! Для CUDA 13 пакеты идут БЕЗ суффикса (nvidia-cuda-runtime / -cublas / ...),
+#     а старые *-cu13 стали пустыми заглушками и валятся при сборке. cuDNN — cu13.
+ORTDIR=$(/venv/main/bin/python -c "import onnxruntime,os;print(os.path.dirname(onnxruntime.__file__))" 2>/dev/null)
+NEED=$(ldd "$ORTDIR"/capi/onnxruntime_pybind11_state*.so 2>/dev/null \
+        | grep -oE 'libcudart\.so\.[0-9]+' | grep -oE '[0-9]+$' | head -1)
+echo "onnxruntime требует libcudart.so.${NEED:-?}"
+if [[ "$NEED" == "13" ]]; then
+    $PIP install --no-cache-dir nvidia-cuda-runtime nvidia-cublas nvidia-cufft nvidia-curand nvidia-cudnn-cu13 || true
+else
+    # фолбэк/дефолт — CUDA 12 (старые суффиксы)
+    $PIP install --no-cache-dir nvidia-cuda-runtime-cu12 nvidia-cublas-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cudnn-cu12 || true
+fi
+
+# прописать все nvidia-либы в ldconfig, чтобы ComfyUI (его поднимает портал)
+# видел libcudart.so.* при старте — иначе onnxruntime снова не импортнётся.
+PYLIB=$(/venv/main/bin/python -c "import site;print(site.getsitepackages()[0])" 2>/dev/null)
+if [[ -n "$PYLIB" ]]; then
+    ls -d "$PYLIB"/nvidia/*/lib > /etc/ld.so.conf.d/zz-nvidia-onnx.conf 2>/dev/null || true
+    ldconfig || true
+fi
 echo "проверка провайдеров (должен быть CUDAExecutionProvider):"
-/venv/main/bin/python -c "import onnxruntime as o; print(o.get_available_providers())" 2>/dev/null || true
+/venv/main/bin/python -c "import onnxruntime as o; print(o.__version__, o.get_available_providers())" 2>/dev/null \
+    || echo "⚠️ onnxruntime не импортнулся — глянь строку 'требует libcudart' выше"
 
 # =====================================================================
 echo "############# 🧹 sanitize: вырезаю рекламные редиректы #############"
