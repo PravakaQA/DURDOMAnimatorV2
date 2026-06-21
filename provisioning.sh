@@ -50,8 +50,14 @@ MODELS=(
   "upscale_models|4xUltrasharp_4xUltrasharpV10.pt|https://huggingface.co/gazsuv/pussydetectorv4/resolve/main/4xUltrasharp_4xUltrasharpV10.pt"
 )
 
-# сигнатуры рекламного редиректа (добавь новые домены, если всплывут)
-SPAM_SIG='sinlab|sinlab\.art|landing\.html|start-here'
+# сигнатуры рекламного редиректа.
+#  - SPAM_SIG: строки/домены лендинга (домен может меняться, строка "Gathering
+#    applications" у этого зловреда стабильна; IP редиректа у каждого пода свой).
+#  - REDIR_SIG: код жёсткого редиректа браузера (легит-виджеты так не делают).
+SPAM_SIG='sinlab|landing\.html|start-here|Gathering applications|gatherApplications'
+REDIR_SIG='location\.(replace|assign|href)[[:space:]]*=?[[:space:]]*[`'"'"'"(]|top\.location|window\.location[[:space:]]*='
+# известные имена файлов-инжекторов (teskors)
+BAD_FILES='ts_photo_preview.js'
 
 # =====================================================================
 echo "############# base #############"
@@ -122,22 +128,33 @@ echo "проверка провайдеров (должен быть CUDAExecuti
 
 # =====================================================================
 echo "############# 🧹 sanitize: вырезаю рекламные редиректы #############"
-# Удаляем ТОЛЬКО заражённые web-ассеты (js/html/css) — сами ноды (TS*, и т.д.)
-# остаются рабочими. Это нейтрализует teskors ts_photo_preview.js и любой
-# аналогичный инъектор, не ломая функционал воркфлоу.
-bad=$(grep -rilaE "$SPAM_SIG" "$COMFY/custom_nodes" \
-        --include=*.js --include=*.html --include=*.css 2>/dev/null)
-if [[ -n "$bad" ]]; then
-    while IFS= read -r f; do
-        [[ -z "$f" ]] && continue
-        echo "🧹 удаляю инъектор: $f"
-        rm -f "$f"
-    done <<< "$bad"
-else
-    echo "чисто — рекламных вставок не найдено"
-fi
+# Чистим ТОЛЬКО заражённые web-ассеты (js/html), сами ноды (TSColorMatch,
+# TSVideoCombineNoMetadata и т.д.) остаются рабочими. Домен инжектора меняется,
+# поэтому чистим тремя ситами: известные строки лендинга + код жёсткого
+# редиректа браузера + известные имена файлов-инжекторов.
+CN="$COMFY/custom_nodes"
+removed=0
+nuke () { [[ -f "$1" ]] && { echo "🧹 удаляю инъектор: $1"; rm -f "$1"; removed=$((removed+1)); }; }
+
+# 1) известные строки лендинга по всем web-ассетам всех нод
+while IFS= read -r f; do [[ -n "$f" ]] && nuke "$f"; done < <(
+    grep -rilaE "$SPAM_SIG" "$CN" --include=*.js --include=*.html --include=*.css 2>/dev/null)
+
+# 2) известные имена файлов-инжекторов
+for bf in $BAD_FILES; do
+    while IFS= read -r f; do [[ -n "$f" ]] && nuke "$f"; done < <(
+        find "$CN" -type f -name "$bf" 2>/dev/null)
+done
+
+# 3) любой web-js с кодом жёсткого редиректа браузера (легит-виджеты так не делают)
+while IFS= read -r f; do [[ -n "$f" ]] && nuke "$f"; done < <(
+    grep -rilaE "$REDIR_SIG" "$CN" --include=*.js 2>/dev/null)
+
+[[ "$removed" -eq 0 ]] && echo "чисто — рекламных вставок не найдено" \
+                       || echo "удалено инъекторов: $removed"
+
 # если сигнатура вдруг в .py — авто не трогаем, только предупреждаем
-pybad=$(grep -rilaE "$SPAM_SIG" "$COMFY/custom_nodes" --include=*.py 2>/dev/null)
+pybad=$(grep -rilaE "$SPAM_SIG" "$CN" --include=*.py 2>/dev/null)
 [[ -n "$pybad" ]] && echo "⚠️ ВНИМАНИЕ: сигнатура в .py (проверь руками): $pybad"
 
 # =====================================================================
@@ -177,3 +194,4 @@ echo "==========================================="
 echo "✅ Готово. ComfyUI 0.10.0 + ноды + модели + рекламный редирект вычищен."
 echo "ℹ️ ComfyUI поднимет портал инстанса сам (тут не запускаем)."
 echo "==========================================="
+
